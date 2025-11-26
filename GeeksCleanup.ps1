@@ -30,7 +30,7 @@ $startupPs1       = Join-Path $scriptRoot "StartupClean.ps1"
 $startupBat       = Join-Path $scriptRoot "StartupClean.bat"
 $logPath          = Join-Path $scriptRoot "DailyClean.log"
 
-$Version      = "1.2.4"
+$Version      = "1.2.5"
 
 $taskNameOld  = "Geeks.Online Startup Cleanup"
 $taskNameLogon = "Geeks.Online Cleanup (Startup)"
@@ -182,13 +182,21 @@ function Toggle-Startup {
     } else {
         Write-Section "Enabling Startup Cleanup..."
         schtasks.exe /Delete /TN "$taskNameLogon" /F | Out-Null 2>&1 # Clean slate
-        $result = schtasks.exe /Create /SC ONLOGON /TN "$taskNameLogon" /TR "`"$startupBat`"" /RL HIGHEST /F 2>&1
-        
-        if ($LASTEXITCODE -eq 0) {
-             Write-Host "Startup cleanup has been ENABLED." -ForegroundColor Green
-        } else {
-             Write-Host "Error: $result" -ForegroundColor Red
-        }
+    # Use cmd /c to properly handle the path with spaces/quotes
+    $cmdArgs = "/Create /SC ONLOGON /TN `"$taskNameLogon`" /TR `"'C:\Scripts\StartupClean.bat'`" /RL HIGHEST /F"
+    
+    # If path is dynamic (not C:\Scripts), we need to handle it carefully
+    if ($scriptRoot -ne "C:\Scripts") {
+         $cmdArgs = "/Create /SC ONLOGON /TN `"$taskNameLogon`" /TR `"`"$startupBat`"`" /RL HIGHEST /F"
+    }
+
+    Start-Process schtasks.exe -ArgumentList $cmdArgs -Wait -NoNewWindow
+    
+    if ($LASTEXITCODE -eq 0) {
+         Write-Host "Startup cleanup has been ENABLED." -ForegroundColor Green
+    } else {
+         Write-Host "Error: Could not create task." -ForegroundColor Red
+    }
     }
     Write-Host ""
     Read-Host "Press Enter to return to the menu" | Out-Null
@@ -233,12 +241,18 @@ function Toggle-Schedule {
     }
 
     schtasks.exe /Delete /TN "$taskNameDaily" /F | Out-Null 2>&1
-    $result = schtasks.exe /Create /SC DAILY /TN "$taskNameDaily" /TR "`"$startupBat`"" /ST $timeStr /RL HIGHEST /F 2>&1
+    
+    $cmdArgs = "/Create /SC DAILY /TN `"$taskNameDaily`" /TR `"'C:\Scripts\StartupClean.bat'`" /ST $timeStr /RL HIGHEST /F"
+    if ($scriptRoot -ne "C:\Scripts") {
+         $cmdArgs = "/Create /SC DAILY /TN `"$taskNameDaily`" /TR `"`"$startupBat`"`" /ST $timeStr /RL HIGHEST /F"
+    }
+
+    Start-Process schtasks.exe -ArgumentList $cmdArgs -Wait -NoNewWindow
 
     if ($LASTEXITCODE -eq 0) {
         Write-Host "Success! Cleanup scheduled for $displayStr daily." -ForegroundColor Green
     } else {
-        Write-Host "Error: $result" -ForegroundColor Red
+        Write-Host "Error: Could not create schedule." -ForegroundColor Red
     }
 
     Write-Host ""
