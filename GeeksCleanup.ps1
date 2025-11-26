@@ -33,21 +33,14 @@ $logPath          = Join-Path $scriptRoot "DailyClean.log"
 # ====================== ASCII BANNER ===============================
 
 $Banner = @"
-                 ███████████████████████████████████████████████
-             ████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░████
-         ███░░        ██████               ██████                 ░░███
-       ██░░          ██    ██             ██    ██                  ░░██
-      ██░           ██      ██           ██      ██                   ░██
-     ██░           ██        ██         ██        ██                   ░██
-     ██░           ██        ██         ██        ██                   ░██
-      ██░           ██      ██           ██      ██                   ░██
-       ██░░          ██    ██             ██    ██                  ░░██
-         ███░░        ██████               ██████                 ░░███
-             ████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░████
-                 ███████████████████████████████████████████████
-
-                           1-800-Geeks.Online
-              24x7 Remote Computer Repair & Onsite Service
+                 ===============================================
+                 =                                             =
+                 =             Geeks.Online Cleanup            =
+                 =                                             =
+                 =         1-800-Geeks.Online (Support)        =
+                 = 24x7 Remote Computer Repair & Onsite Service=
+                 =                                             =
+                 ===============================================
 
 "@
 
@@ -67,9 +60,9 @@ function Clear-AndBanner {
 function Write-Section {
     param([string]$Text)
     Write-Host ""
-    Write-Host "──────────────────────────────────────────────────────────────" -ForegroundColor DarkCyan
+    Write-Host "--------------------------------------------------------------" -ForegroundColor DarkCyan
     Write-Host "  $Text" -ForegroundColor DarkCyan
-    Write-Host "──────────────────────────────────────────────────────────────" -ForegroundColor DarkCyan
+    Write-Host "--------------------------------------------------------------" -ForegroundColor DarkCyan
     Write-Host ""
 }
 
