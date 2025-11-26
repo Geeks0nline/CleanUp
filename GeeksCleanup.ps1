@@ -18,8 +18,12 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 }
 
 # Dynamic Path determination
-$targetDrive = if ($env:SystemDrive) { $env:SystemDrive } else { "C:" }
-$scriptRoot  = "$targetDrive\Scripts"
+if ($PSScriptRoot) {
+    $scriptRoot = $PSScriptRoot
+} else {
+    $targetDrive = if ($env:SystemDrive) { $env:SystemDrive } else { "C:" }
+    $scriptRoot  = "$targetDrive\Scripts"
+}
 
 $taskName         = "Geeks.Online Startup Cleanup"
 $startupPs1       = Join-Path $scriptRoot "StartupClean.ps1"
