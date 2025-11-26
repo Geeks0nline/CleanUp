@@ -22,7 +22,7 @@ $startupPs1       = Join-Path $scriptRoot "StartupClean.ps1"
 $startupBat       = Join-Path $scriptRoot "StartupClean.bat"
 $logPath          = Join-Path $scriptRoot "DailyClean.log"
 
-$Version      = "1.3.0"
+$Version      = "1.3.1"
 
 $taskNameOld  = "Geeks.Online Startup Cleanup"
 $taskNameLogon = "Geeks.Online Cleanup (Startup)"
@@ -328,7 +328,7 @@ do {
         '2' { Toggle-Startup }
         '3' { Toggle-Schedule }
         '4' { Disable-AllCleanups }
-        '5' { break }
+        '5' { return }
         default {
             Write-Host ""
             Write-Host "Please enter a number between 1 and 5." -ForegroundColor Red
