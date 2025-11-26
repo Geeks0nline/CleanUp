@@ -30,7 +30,7 @@ $startupPs1       = Join-Path $scriptRoot "StartupClean.ps1"
 $startupBat       = Join-Path $scriptRoot "StartupClean.bat"
 $logPath          = Join-Path $scriptRoot "DailyClean.log"
 
-$Version      = "1.2.6"
+$Version      = "1.2.7"
 
 $taskNameOld  = "Geeks.Online Startup Cleanup"
 $taskNameLogon = "Geeks.Online Cleanup (Startup)"
@@ -190,13 +190,13 @@ function Toggle-Startup {
          $cmdArgs = "/Create /SC ONLOGON /TN `"$taskNameLogon`" /TR `"`"$startupBat`"`" /RL HIGHEST /F"
     }
 
-    Start-Process schtasks.exe -ArgumentList $cmdArgs -Wait -NoNewWindow
-    
-    if ($LASTEXITCODE -eq 0) {
-         Write-Host "Startup cleanup has been ENABLED." -ForegroundColor Green
-    } else {
-         Write-Host "Error: Could not create task." -ForegroundColor Red
-    }
+        $p = Start-Process schtasks.exe -ArgumentList $cmdArgs -Wait -NoNewWindow -PassThru
+        
+        if ($p.ExitCode -eq 0) {
+             Write-Host "Startup cleanup has been ENABLED." -ForegroundColor Green
+        } else {
+             Write-Host "Error: Could not create task." -ForegroundColor Red
+        }
     }
     Write-Host ""
     Read-Host "Press Enter to return to the menu" | Out-Null
@@ -247,9 +247,9 @@ function Toggle-Schedule {
          $cmdArgs = "/Create /SC DAILY /TN `"$taskNameDaily`" /TR `"`"$startupBat`"`" /ST $timeStr /RL HIGHEST /F"
     }
 
-    Start-Process schtasks.exe -ArgumentList $cmdArgs -Wait -NoNewWindow
+    $p = Start-Process schtasks.exe -ArgumentList $cmdArgs -Wait -NoNewWindow -PassThru
 
-    if ($LASTEXITCODE -eq 0) {
+    if ($p.ExitCode -eq 0) {
         Write-Host "Success! Cleanup scheduled for $displayStr daily." -ForegroundColor Green
     } else {
         Write-Host "Error: Could not create schedule." -ForegroundColor Red
