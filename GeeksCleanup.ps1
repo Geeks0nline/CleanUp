@@ -260,14 +260,28 @@ function Disable-AllCleanups {
     Clear-AndBanner
     Write-Section "Disable Automatic Cleanup"
 
-    # Delete all tasks
-    schtasks.exe /Delete /TN "$taskNameLogon" /F | Out-Null 2>&1
-    schtasks.exe /Delete /TN "$taskNameDaily" /F | Out-Null 2>&1
-    schtasks.exe /Delete /TN "$taskName" /F | Out-Null 2>&1 # Legacy
+    # Smart Task Deletion
+    if (Get-TaskStatus $taskNameLogon) {
+        schtasks.exe /Delete /TN "$taskNameLogon" /F | Out-Null
+        Write-Host "Removed Startup Task." -ForegroundColor Gray
+    }
+    if (Get-TaskStatus $taskNameDaily) {
+        schtasks.exe /Delete /TN "$taskNameDaily" /F | Out-Null
+        Write-Host "Removed Daily Task." -ForegroundColor Gray
+    }
+    if (Get-TaskStatus $taskName) {
+        schtasks.exe /Delete /TN "$taskName" /F | Out-Null # Legacy
+    }
 
-    # Delete files
-    Remove-Item $startupBat -Force -ErrorAction SilentlyContinue
-    Remove-Item $startupPs1 -Force -ErrorAction SilentlyContinue
+    # Smart File Deletion
+    if (Test-Path $startupBat) {
+        Remove-Item $startupBat -Force -ErrorAction SilentlyContinue
+        Write-Host "Removed StartupClean.bat" -ForegroundColor Gray
+    }
+    if (Test-Path $startupPs1) {
+        Remove-Item $startupPs1 -Force -ErrorAction SilentlyContinue
+        Write-Host "Removed StartupClean.ps1" -ForegroundColor Gray
+    }
 
     Log-Line "All automatic cleanups DISABLED"
     Write-Host "All automatic cleanups have been disabled and scripts removed." -ForegroundColor Yellow
