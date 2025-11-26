@@ -5,7 +5,22 @@
       • Optional automatic cleanup at Windows logon (startup) with a popup
 #>
 
-$scriptRoot       = "C:\Scripts"
+
+# ====================== Self-Elevation & Setup ====================
+
+# Ensure running as Administrator
+if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    $newProcess = New-Object System.Diagnostics.ProcessStartInfo "PowerShell";
+    $newProcess.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`"";
+    $newProcess.Verb = "runas";
+    [System.Diagnostics.Process]::Start($newProcess);
+    Exit
+}
+
+# Dynamic Path determination
+$targetDrive = if ($env:SystemDrive) { $env:SystemDrive } else { "C:" }
+$scriptRoot  = "$targetDrive\Scripts"
+
 $taskName         = "Geeks.Online Startup Cleanup"
 $startupPs1       = Join-Path $scriptRoot "StartupClean.ps1"
 $startupBat       = Join-Path $scriptRoot "StartupClean.bat"
@@ -74,13 +89,13 @@ function Run-ManualCleanup {
 
     Write-Host "[1/4] Cleaning temporary folders..." -ForegroundColor White
     Remove-Item -Path "$env:TEMP\*" -Recurse -Force -ErrorAction SilentlyContinue
-    Remove-Item -Path "C:\Windows\Temp\*" -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -Path "$env:SystemRoot\Temp\*" -Recurse -Force -ErrorAction SilentlyContinue
 
     Write-Host "[2/4] Emptying Recycle Bin..." -ForegroundColor White
     try { Clear-RecycleBin -Force -ErrorAction SilentlyContinue } catch {}
 
     Write-Host "[3/4] Cleaning prefetch cache..." -ForegroundColor White
-    Remove-Item -Path "C:\Windows\Prefetch\*" -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -Path "$env:SystemRoot\Prefetch\*" -Recurse -Force -ErrorAction SilentlyContinue
 
     Write-Host "[4/4] Running Windows Disk Cleanup silently..." -ForegroundColor White
     try {
@@ -104,13 +119,14 @@ function Ensure-StartupScript {
     Ensure-ScriptFolder
 
     if (-not (Test-Path $startupPs1)) {
-        @'
-Remove-Item -Path "$env:TEMP\*" -Recurse -Force -ErrorAction SilentlyContinue
-Remove-Item -Path "C:\Windows\Temp\*" -Recurse -Force -ErrorAction SilentlyContinue
+        # Dynamically generate the script with correct paths
+        $content = @"
+Remove-Item -Path "`$env:TEMP\*" -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -Path "`$env:SystemRoot\Temp\*" -Recurse -Force -ErrorAction SilentlyContinue
 try { Clear-RecycleBin -Force -ErrorAction SilentlyContinue } catch {}
-Remove-Item -Path "C:\Windows\Prefetch\*" -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -Path "`$env:SystemRoot\Prefetch\*" -Recurse -Force -ErrorAction SilentlyContinue
 
-"Startup cleanup ran at $(Get-Date)" | Add-Content "C:\Scripts\DailyClean.log"
+"Startup cleanup ran at $(Get-Date)" | Add-Content "$scriptRoot\DailyClean.log"
 
 Add-Type -AssemblyName System.Windows.Forms
 [System.Windows.Forms.MessageBox]::Show(
@@ -119,14 +135,16 @@ Add-Type -AssemblyName System.Windows.Forms
     [System.Windows.Forms.MessageBoxButtons]::OK,
     [System.Windows.Forms.MessageBoxIcon]::Information
 ) | Out-Null
-'@ | Set-Content $startupPs1 -Encoding UTF8
+"@ 
+        Set-Content -Path $startupPs1 -Value $content -Encoding UTF8
     }
 
     if (-not (Test-Path $startupBat)) {
-        @"
+        $batContent = @"
 @echo off
-powershell.exe -WindowStyle Hidden -ExecutionPolicy Bypass -File "C:\Scripts\StartupClean.ps1"
-"@ | Set-Content $startupBat -Encoding ASCII
+powershell.exe -WindowStyle Hidden -ExecutionPolicy Bypass -File "$startupPs1"
+"@ 
+        Set-Content -Path $startupBat -Value $batContent -Encoding ASCII
     }
 }
 
@@ -140,7 +158,7 @@ function Enable-StartupCleanup {
     $result = schtasks.exe /Create `
         /SC ONLOGON `
         /TN "$taskName" `
-        /TR "C:\Scripts\StartupClean.bat" `
+        /TR "`"$startupBat`"" `
         /RL HIGHEST `
         /F 2>&1
 
