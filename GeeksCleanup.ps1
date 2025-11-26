@@ -30,13 +30,15 @@ $startupPs1       = Join-Path $scriptRoot "StartupClean.ps1"
 $startupBat       = Join-Path $scriptRoot "StartupClean.bat"
 $logPath          = Join-Path $scriptRoot "DailyClean.log"
 
+$Version      = "1.2.2"
+
 # ====================== ASCII BANNER ===============================
 
 $Banner = @"
                  ===============================================
                  =                                             =
                  =             Geeks.Online Cleanup            =
-                 =                                             =
+                 =                  v$Version                    =
                  =         1-800-Geeks.Online (Support)        =
                  = 24x7 Remote Computer Repair & Onsite Service=
                  =                                             =
@@ -172,17 +174,70 @@ function Enable-StartupCleanup {
     Read-Host "Press Enter to return to the menu" | Out-Null
 }
 
-function Disable-StartupCleanup {
+function Enable-ScheduledCleanup {
     Clear-AndBanner
-    Write-Section "Disable Automatic Cleanup at Startup"
+    Write-Section "Schedule Daily Cleanup"
+
+    Write-Host "Enter the time you want the cleanup to run every day." -ForegroundColor White
+    Write-Host "Examples: 7:00 PM, 8:30 AM, 14:00" -ForegroundColor Gray
+    Write-Host ""
+    
+    $validTime = $false
+    $timeStr = ""
+    
+    while (-not $validTime) {
+        $userInput = Read-Host "Enter Time"
+        if ([string]::IsNullOrWhiteSpace($userInput)) { return }
+        
+        try {
+            # Parse input to check validity and format to HH:mm for Task Scheduler
+            $dt = [DateTime]::Parse($userInput)
+            $timeStr = $dt.ToString("HH:mm")
+            $displayStr = $dt.ToString("h:mm tt")
+            $validTime = $true
+        } catch {
+            Write-Host "Invalid format. Please try again (e.g. 7:00 PM)" -ForegroundColor Red
+        }
+    }
+
+    Ensure-StartupScript # Ensures .bat and .ps1 files exist
+    
+    # Remove existing task first to avoid conflicts
+    schtasks.exe /Delete /TN "$taskName" /F | Out-Null 2>&1
+
+    Write-Host "Scheduling cleanup for $displayStr daily..." -ForegroundColor Cyan
+    
+    $result = schtasks.exe /Create `
+        /SC DAILY `
+        /TN "$taskName" `
+        /TR "`"$startupBat`"" `
+        /ST $timeStr `
+        /RL HIGHEST `
+        /F 2>&1
+
+    if ($LASTEXITCODE -eq 0) {
+        Log-Line "Scheduled cleanup ENABLED at $displayStr"
+        Write-Host "Success! Cleanup will run every day at $displayStr." -ForegroundColor Green
+    } else {
+        Write-Host "Error creating schedule:" -ForegroundColor Red
+        Write-Host $result -ForegroundColor Red
+    }
+
+    Write-Host ""
+    Read-Host "Press Enter to return to the menu" | Out-Null
+}
+
+function Disable-AllCleanups {
+    Clear-AndBanner
+    Write-Section "Disable Automatic Cleanup"
 
     $result = schtasks.exe /Delete /TN "$taskName" /F 2>&1
 
     if ($LASTEXITCODE -eq 0) {
-        Log-Line "Startup cleanup DISABLED"
-        Write-Host "Startup cleanup has been disabled." -ForegroundColor Yellow
+        Log-Line "All automatic cleanups DISABLED"
+        Write-Host "Automatic cleanup has been disabled." -ForegroundColor Yellow
     } else {
-        Write-Host "Error disabling startup cleanup:" -ForegroundColor Red
+        Write-Host "Error disabling cleanup (maybe it wasn't enabled?):" -ForegroundColor Red
         Write-Host $result -ForegroundColor Red
     }
 
@@ -198,9 +253,10 @@ function Show-Menu {
     Write-Host "Select an option:" -ForegroundColor White
     Write-Host ""
     Write-Host "  [1]  Run cleanup now" -ForegroundColor Cyan
-    Write-Host "  [2]  Turn ON cleanup at startup" -ForegroundColor Cyan
-    Write-Host "  [3]  Turn OFF cleanup at startup" -ForegroundColor Cyan
-    Write-Host "  [4]  Exit" -ForegroundColor Cyan
+    Write-Host "  [2]  Turn ON cleanup at startup (Logon)" -ForegroundColor Cyan
+    Write-Host "  [3]  Turn ON scheduled cleanup (Daily at specific time)" -ForegroundColor Cyan
+    Write-Host "  [4]  Turn OFF all automatic cleanups" -ForegroundColor Cyan
+    Write-Host "  [5]  Exit" -ForegroundColor Cyan
     Write-Host ""
 }
 
@@ -208,16 +264,17 @@ function Show-Menu {
 
 do {
     Show-Menu
-    $choice = Read-Host "Enter choice (1-4)"
+    $choice = Read-Host "Enter choice (1-5)"
 
     switch ($choice) {
         '1' { Run-ManualCleanup }
         '2' { Enable-StartupCleanup }
-        '3' { Disable-StartupCleanup }
-        '4' { break }
+        '3' { Enable-ScheduledCleanup }
+        '4' { Disable-AllCleanups }
+        '5' { break }
         default {
             Write-Host ""
-            Write-Host "Please enter a number between 1 and 4." -ForegroundColor Red
+            Write-Host "Please enter a number between 1 and 5." -ForegroundColor Red
             Start-Sleep -Seconds 1.2
         }
     }
