@@ -5,7 +5,6 @@
       • Optional automatic cleanup at Windows logon (startup) with a popup
 #>
 
-
 # ====================== Self-Elevation & Setup ====================
 
 # Ensure running as Administrator
@@ -25,12 +24,12 @@ if ($PSScriptRoot) {
     $scriptRoot  = "$targetDrive\Scripts"
 }
 
-$taskName         = "Geeks.Online Startup Cleanup"
+$taskName         = "Geeks.Online Startup Cleanup" # Legacy
 $startupPs1       = Join-Path $scriptRoot "StartupClean.ps1"
 $startupBat       = Join-Path $scriptRoot "StartupClean.bat"
 $logPath          = Join-Path $scriptRoot "DailyClean.log"
 
-$Version      = "1.2.7"
+$Version      = "1.2.8"
 
 $taskNameOld  = "Geeks.Online Startup Cleanup"
 $taskNameLogon = "Geeks.Online Cleanup (Startup)"
@@ -116,7 +115,6 @@ function Run-ManualCleanup {
     Read-Host "Press Enter to return to the menu" | Out-Null
 }
 
-
 # ====================== Task Helpers ==============================
 
 function Get-TaskStatus {
@@ -182,13 +180,12 @@ function Toggle-Startup {
     } else {
         Write-Section "Enabling Startup Cleanup..."
         schtasks.exe /Delete /TN "$taskNameLogon" /F | Out-Null 2>&1 # Clean slate
-    # Use cmd /c to properly handle the path with spaces/quotes
-    $cmdArgs = "/Create /SC ONLOGON /TN `"$taskNameLogon`" /TR `"'C:\Scripts\StartupClean.bat'`" /RL HIGHEST /F"
-    
-    # If path is dynamic (not C:\Scripts), we need to handle it carefully
-    if ($scriptRoot -ne "C:\Scripts") {
-         $cmdArgs = "/Create /SC ONLOGON /TN `"$taskNameLogon`" /TR `"`"$startupBat`"`" /RL HIGHEST /F"
-    }
+        
+        # Use cmd /c to properly handle the path with spaces/quotes
+        $cmdArgs = "/Create /SC ONLOGON /TN `"$taskNameLogon`" /TR `"'C:\Scripts\StartupClean.bat'`" /RL HIGHEST /F"
+        if ($scriptRoot -ne "C:\Scripts") {
+             $cmdArgs = "/Create /SC ONLOGON /TN `"$taskNameLogon`" /TR `"`"$startupBat`"`" /RL HIGHEST /F"
+        }
 
         $p = Start-Process schtasks.exe -ArgumentList $cmdArgs -Wait -NoNewWindow -PassThru
         
@@ -259,6 +256,25 @@ function Toggle-Schedule {
     Read-Host "Press Enter to return to the menu" | Out-Null
 }
 
+function Disable-AllCleanups {
+    Clear-AndBanner
+    Write-Section "Disable Automatic Cleanup"
+
+    # Delete all tasks
+    schtasks.exe /Delete /TN "$taskNameLogon" /F | Out-Null 2>&1
+    schtasks.exe /Delete /TN "$taskNameDaily" /F | Out-Null 2>&1
+    schtasks.exe /Delete /TN "$taskName" /F | Out-Null 2>&1 # Legacy
+
+    # Delete files
+    Remove-Item $startupBat -Force -ErrorAction SilentlyContinue
+    Remove-Item $startupPs1 -Force -ErrorAction SilentlyContinue
+
+    Log-Line "All automatic cleanups DISABLED"
+    Write-Host "All automatic cleanups have been disabled and scripts removed." -ForegroundColor Yellow
+
+    Write-Host ""
+    Read-Host "Press Enter to return to the menu" | Out-Null
+}
 
 # ====================== Main Menu ================================
 
@@ -280,11 +296,12 @@ function Show-Menu {
     Write-Host "  [2]  Startup Cleanup   " -NoNewline -ForegroundColor Cyan
     Write-Host $stStatus -ForegroundColor $stColor
     
-    Write-Host "  [3]  Daily Schedule Clean Up   " -NoNewline -ForegroundColor Cyan
+    Write-Host "  [3]  Daily Schedule    " -NoNewline -ForegroundColor Cyan
     Write-Host $scStatus -ForegroundColor $scColor
     
     Write-Host ""
-    Write-Host "  [4]  Exit" -ForegroundColor Cyan
+    Write-Host "  [4]  Uninstall / Disable All" -ForegroundColor Yellow
+    Write-Host "  [5]  Exit" -ForegroundColor Cyan
     Write-Host ""
 }
 
@@ -292,16 +309,17 @@ function Show-Menu {
 
 do {
     Show-Menu
-    $choice = Read-Host "Enter choice (1-4)"
+    $choice = Read-Host "Enter choice (1-5)"
 
     switch ($choice) {
         '1' { Run-ManualCleanup }
         '2' { Toggle-Startup }
         '3' { Toggle-Schedule }
-        '4' { break }
+        '4' { Disable-AllCleanups }
+        '5' { break }
         default {
             Write-Host ""
-            Write-Host "Please enter a number between 1 and 4." -ForegroundColor Red
+            Write-Host "Please enter a number between 1 and 5." -ForegroundColor Red
             Start-Sleep -Seconds 1.2
         }
     }
