@@ -30,7 +30,11 @@ $startupPs1       = Join-Path $scriptRoot "StartupClean.ps1"
 $startupBat       = Join-Path $scriptRoot "StartupClean.bat"
 $logPath          = Join-Path $scriptRoot "DailyClean.log"
 
-$Version      = "1.2.2"
+$Version      = "1.2.4"
+
+$taskNameOld  = "Geeks.Online Startup Cleanup"
+$taskNameLogon = "Geeks.Online Cleanup (Startup)"
+$taskNameDaily = "Geeks.Online Cleanup (Daily)"
 
 # ====================== ASCII BANNER ===============================
 
