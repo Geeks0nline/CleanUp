@@ -112,10 +112,28 @@ function Run-ManualCleanup {
     Read-Host "Press Enter to return to the menu" | Out-Null
 }
 
+
+# ====================== Task Helpers ==============================
+
+function Get-TaskStatus {
+    param($Name)
+    $check = schtasks.exe /Query /TN "$Name" 2>$null
+    if ($LASTEXITCODE -eq 0) { return $true }
+    return $false
+}
+
+function Remove-LegacyTask {
+    # Remove the old single-task if it exists
+    if (Get-TaskStatus $taskNameOld) {
+        schtasks.exe /Delete /TN "$taskNameOld" /F | Out-Null 2>&1
+    }
+}
+
 # ====================== Startup Cleanup ===========================
 
 function Ensure-StartupScript {
     Ensure-ScriptFolder
+    Remove-LegacyTask
 
     if (-not (Test-Path $startupPs1)) {
         # Dynamically generate the script with correct paths
@@ -147,41 +165,52 @@ powershell.exe -WindowStyle Hidden -ExecutionPolicy Bypass -File "$startupPs1"
     }
 }
 
-function Enable-StartupCleanup {
+function Toggle-Startup {
     Clear-AndBanner
-    Write-Section "Enable Automatic Cleanup at Startup"
-
     Ensure-StartupScript
-    schtasks.exe /Delete /TN "$taskName" /F | Out-Null 2>&1
+    
+    $exists = Get-TaskStatus $taskNameLogon
 
-    $result = schtasks.exe /Create `
-        /SC ONLOGON `
-        /TN "$taskName" `
-        /TR "`"$startupBat`"" `
-        /RL HIGHEST `
-        /F 2>&1
-
-    if ($LASTEXITCODE -eq 0) {
-        Log-Line "Startup cleanup ENABLED"
-        Write-Host "Startup cleanup has been ENABLED." -ForegroundColor Green
-        Write-Host "It will automatically run each time the computer logs in." -ForegroundColor Green
+    if ($exists) {
+        Write-Section "Disabling Startup Cleanup..."
+        schtasks.exe /Delete /TN "$taskNameLogon" /F | Out-Null 2>&1
+        Write-Host "Startup cleanup has been DISABLED." -ForegroundColor Yellow
     } else {
-        Write-Host "Error enabling startup cleanup:" -ForegroundColor Red
-        Write-Host $result -ForegroundColor Red
+        Write-Section "Enabling Startup Cleanup..."
+        schtasks.exe /Delete /TN "$taskNameLogon" /F | Out-Null 2>&1 # Clean slate
+        $result = schtasks.exe /Create /SC ONLOGON /TN "$taskNameLogon" /TR "`"$startupBat`"" /RL HIGHEST /F 2>&1
+        
+        if ($LASTEXITCODE -eq 0) {
+             Write-Host "Startup cleanup has been ENABLED." -ForegroundColor Green
+        } else {
+             Write-Host "Error: $result" -ForegroundColor Red
+        }
     }
-
     Write-Host ""
     Read-Host "Press Enter to return to the menu" | Out-Null
 }
 
-function Enable-ScheduledCleanup {
+function Toggle-Schedule {
     Clear-AndBanner
-    Write-Section "Schedule Daily Cleanup"
-
-    Write-Host "Enter the time you want the cleanup to run every day." -ForegroundColor White
-    Write-Host "Examples: 7:00 PM, 8:30 AM, 14:00" -ForegroundColor Gray
-    Write-Host ""
+    Ensure-StartupScript
     
+    $exists = Get-TaskStatus $taskNameDaily
+
+    if ($exists) {
+        Write-Section "Disabling Scheduled Cleanup..."
+        schtasks.exe /Delete /TN "$taskNameDaily" /F | Out-Null 2>&1
+        Write-Host "Scheduled daily cleanup has been DISABLED." -ForegroundColor Yellow
+        Write-Host ""
+        Read-Host "Press Enter to return to the menu" | Out-Null
+        return
+    }
+
+    # Enable Logic
+    Write-Section "Enable Daily Cleanup"
+    Write-Host "Enter the time for daily cleanup (e.g. 7:00 PM, 14:30)" -ForegroundColor White
+    Write-Host "Current Schedule: DISABLED" -ForegroundColor Yellow
+    Write-Host ""
+
     $validTime = $false
     $timeStr = ""
     
@@ -190,73 +219,54 @@ function Enable-ScheduledCleanup {
         if ([string]::IsNullOrWhiteSpace($userInput)) { return }
         
         try {
-            # Parse input to check validity and format to HH:mm for Task Scheduler
             $dt = [DateTime]::Parse($userInput)
             $timeStr = $dt.ToString("HH:mm")
             $displayStr = $dt.ToString("h:mm tt")
             $validTime = $true
         } catch {
-            Write-Host "Invalid format. Please try again (e.g. 7:00 PM)" -ForegroundColor Red
+            Write-Host "Invalid format. Try again (e.g. 7:00 PM)" -ForegroundColor Red
         }
     }
 
-    Ensure-StartupScript # Ensures .bat and .ps1 files exist
-    
-    # Remove existing task first to avoid conflicts
-    schtasks.exe /Delete /TN "$taskName" /F | Out-Null 2>&1
-
-    Write-Host "Scheduling cleanup for $displayStr daily..." -ForegroundColor Cyan
-    
-    $result = schtasks.exe /Create `
-        /SC DAILY `
-        /TN "$taskName" `
-        /TR "`"$startupBat`"" `
-        /ST $timeStr `
-        /RL HIGHEST `
-        /F 2>&1
+    schtasks.exe /Delete /TN "$taskNameDaily" /F | Out-Null 2>&1
+    $result = schtasks.exe /Create /SC DAILY /TN "$taskNameDaily" /TR "`"$startupBat`"" /ST $timeStr /RL HIGHEST /F 2>&1
 
     if ($LASTEXITCODE -eq 0) {
-        Log-Line "Scheduled cleanup ENABLED at $displayStr"
-        Write-Host "Success! Cleanup will run every day at $displayStr." -ForegroundColor Green
+        Write-Host "Success! Cleanup scheduled for $displayStr daily." -ForegroundColor Green
     } else {
-        Write-Host "Error creating schedule:" -ForegroundColor Red
-        Write-Host $result -ForegroundColor Red
+        Write-Host "Error: $result" -ForegroundColor Red
     }
 
     Write-Host ""
     Read-Host "Press Enter to return to the menu" | Out-Null
 }
 
-function Disable-AllCleanups {
-    Clear-AndBanner
-    Write-Section "Disable Automatic Cleanup"
-
-    $result = schtasks.exe /Delete /TN "$taskName" /F 2>&1
-
-    if ($LASTEXITCODE -eq 0) {
-        Log-Line "All automatic cleanups DISABLED"
-        Write-Host "Automatic cleanup has been disabled." -ForegroundColor Yellow
-    } else {
-        Write-Host "Error disabling cleanup (maybe it wasn't enabled?):" -ForegroundColor Red
-        Write-Host $result -ForegroundColor Red
-    }
-
-    Write-Host ""
-    Read-Host "Press Enter to return to the menu" | Out-Null
-}
 
 # ====================== Main Menu ================================
 
 function Show-Menu {
     Clear-AndBanner
 
+    # Get dynamic status
+    $stStatus = if (Get-TaskStatus $taskNameLogon) { "[ENABLED] " } else { "[DISABLED]" }
+    $stColor  = if ($stStatus -match "ENABLED") { "Green" } else { "Gray" }
+
+    $scStatus = if (Get-TaskStatus $taskNameDaily) { "[ENABLED] " } else { "[DISABLED]" }
+    $scColor  = if ($scStatus -match "ENABLED") { "Green" } else { "Gray" }
+
     Write-Host "Select an option:" -ForegroundColor White
     Write-Host ""
     Write-Host "  [1]  Run cleanup now" -ForegroundColor Cyan
-    Write-Host "  [2]  Turn ON cleanup at startup (Logon)" -ForegroundColor Cyan
-    Write-Host "  [3]  Turn ON scheduled cleanup (Daily at specific time)" -ForegroundColor Cyan
-    Write-Host "  [4]  Turn OFF all automatic cleanups" -ForegroundColor Cyan
-    Write-Host "  [5]  Exit" -ForegroundColor Cyan
+    Write-Host ""
+    
+    Write-Host "  [2]  Startup Cleanup   " -NoNewline -ForegroundColor Cyan
+    Write-Host $stStatus -ForegroundColor $stColor
+    
+    Write-Host "  [3]  Daily Schedule Clean Up   " -NoNewline -ForegroundColor Cyan
+    Write-Host $scStatus -ForegroundColor $scColor
+    
+    Write-Host ""
+    Write-Host "  [4]  Exit" -ForegroundColor Cyan
     Write-Host ""
 }
 
@@ -264,17 +274,16 @@ function Show-Menu {
 
 do {
     Show-Menu
-    $choice = Read-Host "Enter choice (1-5)"
+    $choice = Read-Host "Enter choice (1-4)"
 
     switch ($choice) {
         '1' { Run-ManualCleanup }
-        '2' { Enable-StartupCleanup }
-        '3' { Enable-ScheduledCleanup }
-        '4' { Disable-AllCleanups }
-        '5' { break }
+        '2' { Toggle-Startup }
+        '3' { Toggle-Schedule }
+        '4' { break }
         default {
             Write-Host ""
-            Write-Host "Please enter a number between 1 and 5." -ForegroundColor Red
+            Write-Host "Please enter a number between 1 and 4." -ForegroundColor Red
             Start-Sleep -Seconds 1.2
         }
     }
