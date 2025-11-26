@@ -1,41 +1,42 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/GeeksOnline/.github/main/profile/banner.png" alt="Geeks.Online Banner" width="100%" />
+  <img src="https://raw.githubusercontent.com/GeeksOnline/.github/main/profile/P_1-800-Geeks.Online2-02.jpg" alt="Geeks.Online Banner" width="100%" />
 </p>
 
 # 👋 Welcome to **Geeks.Online®**
-### *Modern IT. Simply Delivered.*
+## *Modern IT. Simply Delivered.*
 
-We are a U.S.–based Managed IT Services company providing **secure, reliable, and people-focused** technology solutions for small and mid-sized businesses.  
-Our primary focus: **healthcare, dental, and compliance-sensitive environments** where uptime and security are critical.
+Geeks.Online® is a U.S.–based Managed IT Services company providing **secure, reliable, and people-focused** technology solutions for small and mid-sized businesses.
+
+We focus heavily on **healthcare, dental, and compliance-sensitive environments** where uptime and security matter most.
 
 ---
 
-## 🚀 What We Do
-- 🔧 Managed IT Services (MSP)
-- 🔐 SecureCare 360™ — cybersecurity + monitoring suite  
-- 🖥️ Intune Autopilot & Zero-Touch Deployment  
-- 🌐 Microsoft 365 & Azure administration  
-- 📡 SonicWall firewall deployments & MDR/NDR  
-- 🛠️ Field Services & Remote Helpdesk  
-- 🚀 Automation for device prep, cleanup, imaging, and updates  
+## 🔧 What We Do
+- 🖥 **Managed IT Services (MSP)**
+- 🛡 **SecureCare 360™** — cybersecurity + monitoring stack
+- 📦 **Intune Autopilot** & zero-touch deployments
+- 🌐 **Microsoft 365 & Azure** management
+- 🔥 **SonicWall** firewall deployments + MDR/NDR
+- 🚑 **Remote Helpdesk & Field Services**
+- ⚙️ **Automation** for device prep, cleanup, imaging, and updates
 
-Everything follows the official **Geeks.Online Operations Handbook** standards.
+All processes follow the official **Geeks.Online Operations Handbook** standards.
 
 ---
 
 ## 🧰 Tools & Technologies
 <p align="center">
-  <img src="https://skillicons.dev/icons?i=powershell,azure,windows,linux,js,ts,nodejs,python,git,github,ps,visualstudio,vscode&theme=dark" />
+  <img src="https://skillicons.dev/icons?i=powershell,azure,windows,linux,js,ts,nodejs,python,git,githubactions,ps,visualstudio,vscode&theme=dark" />
 </p>
 
 ---
 
-## 🛡️ Security-First Approach
-- HIPAA & PCI-aligned practices  
+## 🛡 Security-First Approach
+- HIPAA & PCI-aligned workflows  
 - Passwordless authentication (YubiKey + Hello + Authenticator)  
-- Microsoft 365 E5 security stack  
+- Microsoft 365 E5 device governance  
 - PC Matic enterprise antivirus  
-- 1Password Business for encrypted credential vaulting  
+- 1Password Business secure credential vaulting  
 - SonicWall MDR/NDR monitoring  
 
 We **never store client data** in GitHub.
@@ -44,25 +45,24 @@ We **never store client data** in GitHub.
 
 ## 📈 Organization Stats
 <p align="center">
-  <img src="https://github-profile-trophy.vercel.app/?username=GeeksOnline&theme=algolia&no-bg=true&margin-w=15&margin-h=15" />
+  <img src="https://github-profile-trophy.vercel.app/?username=GeeksOnline&theme=algolia&no-bg=true&margin-w=8&margin-h=8" />
 </p>
 
 ---
 
-## 🌐 Brand Identity
-**Colors:** Blue (#3495f3), Green (#6fd12e), Orange (#ff4a02), Purple (#8224e3)  
-**Tone:** Friendly · Smart · Practical — no corporate jargon.
+## 🎨 Brand Identity
+Simple • Modern • Friendly • No corporate jargon.
 
 ---
 
-## 📞 Contact Us
-🌐 Website: **https://geeks.online**  
-📧 Email: **help@geeksonline.com**  
-📞 Phone: **800-Geeks-Online (800-433-5766)**  
+## 🌐 Connect With Us
+🌍 **Website:** https://geeks.online  
+📧 **Helpdesk:** help@geeksonline.com  
+📞 **Phone:** 800-Geeks-Online (800-433-5766)
 
 ---
 
 <p align="center">
-  <strong>Thank you for visiting the Geeks.Online® GitHub organization!</strong><br/>
-  <em>Modern IT. Simply Delivered.</em>
+  <strong>Geeks.Online®</strong><br>
+  Modern IT. Simply Delivered.
 </p>
