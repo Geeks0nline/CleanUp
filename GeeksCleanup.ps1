@@ -1,10 +1,3 @@
-<#
-    Geeks.Online - Debra Cleanup Tool
-    Description:
-      • Manual cleanup on demand (visible, with status)
-      • Optional automatic cleanup at Windows logon (startup) with a popup
-#>
-
 # ====================== Self-Elevation & Setup ====================
 
 # Ensure running as Administrator
@@ -29,7 +22,7 @@ $startupPs1       = Join-Path $scriptRoot "StartupClean.ps1"
 $startupBat       = Join-Path $scriptRoot "StartupClean.bat"
 $logPath          = Join-Path $scriptRoot "DailyClean.log"
 
-$Version      = "1.2.8"
+$Version      = "1.3.0"
 
 $taskNameOld  = "Geeks.Online Startup Cleanup"
 $taskNameLogon = "Geeks.Online Cleanup (Startup)"
@@ -119,9 +112,14 @@ function Run-ManualCleanup {
 
 function Get-TaskStatus {
     param($Name)
+    # Try native PowerShell command first (Cleaner, no text output)
+    if (Get-Command Get-ScheduledTask -ErrorAction SilentlyContinue) {
+        $task = Get-ScheduledTask -TaskName "$Name" -ErrorAction SilentlyContinue
+        return ($null -ne $task)
+    }
+    # Fallback
     $check = schtasks.exe /Query /TN "$Name" 2>$null
-    if ($LASTEXITCODE -eq 0) { return $true }
-    return $false
+    return ($LASTEXITCODE -eq 0)
 }
 
 function Remove-LegacyTask {
@@ -175,11 +173,11 @@ function Toggle-Startup {
 
     if ($exists) {
         Write-Section "Disabling Startup Cleanup..."
-        schtasks.exe /Delete /TN "$taskNameLogon" /F | Out-Null 2>&1
+        schtasks.exe /Delete /TN "$taskNameLogon" /F | Out-Null
         Write-Host "Startup cleanup has been DISABLED." -ForegroundColor Yellow
     } else {
         Write-Section "Enabling Startup Cleanup..."
-        schtasks.exe /Delete /TN "$taskNameLogon" /F | Out-Null 2>&1 # Clean slate
+        # Removed explicit delete to avoid 'file not found' errors. /Create /F handles overwrite.
         
         # Use cmd /c to properly handle the path with spaces/quotes
         $cmdArgs = "/Create /SC ONLOGON /TN `"$taskNameLogon`" /TR `"'C:\Scripts\StartupClean.bat'`" /RL HIGHEST /F"
@@ -207,7 +205,7 @@ function Toggle-Schedule {
 
     if ($exists) {
         Write-Section "Disabling Scheduled Cleanup..."
-        schtasks.exe /Delete /TN "$taskNameDaily" /F | Out-Null 2>&1
+        schtasks.exe /Delete /TN "$taskNameDaily" /F | Out-Null
         Write-Host "Scheduled daily cleanup has been DISABLED." -ForegroundColor Yellow
         Write-Host ""
         Read-Host "Press Enter to return to the menu" | Out-Null
@@ -237,7 +235,7 @@ function Toggle-Schedule {
         }
     }
 
-    schtasks.exe /Delete /TN "$taskNameDaily" /F | Out-Null 2>&1
+    # Removed explicit delete to avoid errors.
     
     $cmdArgs = "/Create /SC DAILY /TN `"$taskNameDaily`" /TR `"'C:\Scripts\StartupClean.bat'`" /ST $timeStr /RL HIGHEST /F"
     if ($scriptRoot -ne "C:\Scripts") {
