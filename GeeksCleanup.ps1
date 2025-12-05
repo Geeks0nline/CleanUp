@@ -22,7 +22,7 @@ $startupPs1       = Join-Path $scriptRoot "StartupClean.ps1"
 $startupBat       = Join-Path $scriptRoot "StartupClean.bat"
 $logPath          = Join-Path $scriptRoot "DailyClean.log"
 
-$Version      = "1.3.2"
+$Version      = "1.3.3"
 
 $taskNameOld  = "Geeks.Online Startup Cleanup"
 $taskNameLogon = "Geeks.Online Cleanup (Startup)"
@@ -92,20 +92,38 @@ function Run-ManualCleanup {
     Write-Host "[3/4] Cleaning prefetch cache..." -ForegroundColor White
     Remove-Item -Path "$env:SystemRoot\Prefetch\*" -Recurse -Force -ErrorAction SilentlyContinue
 
-    Write-Host "[4/4] Running Windows Disk Cleanup silently..." -ForegroundColor White
+    Write-Host "[4/4] Running Disk Cleanup (silent)..." -ForegroundColor White
     try {
-        # Configure Disk Cleanup to run silently via registry (StateFlags0100)
-        $volumeCachePath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches"
-        Get-ChildItem $volumeCachePath -ErrorAction SilentlyContinue | ForEach-Object {
-            Set-ItemProperty -Path $_.PSPath -Name "StateFlags0100" -Value 2 -Type DWord -ErrorAction SilentlyContinue
-        }
+        # Windows Update cache
+        Stop-Service -Name wuauserv -Force -ErrorAction SilentlyContinue
+        Remove-Item "$env:SystemRoot\SoftwareDistribution\Download\*" -Recurse -Force -ErrorAction SilentlyContinue
+        Start-Service -Name wuauserv -ErrorAction SilentlyContinue
         
-        # Run Disk Cleanup silently using the configured flags
-        Start-Process cleanmgr.exe -ArgumentList "/sagerun:100" -Wait -WindowStyle Hidden
+        # Windows logs
+        Remove-Item "$env:SystemRoot\Logs\CBS\*" -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item "$env:SystemRoot\Logs\DISM\*" -Recurse -Force -ErrorAction SilentlyContinue
+        
+        # Thumbnail cache
+        Remove-Item "$env:LOCALAPPDATA\Microsoft\Windows\Explorer\thumbcache_*.db" -Force -ErrorAction SilentlyContinue
+        
+        # Windows Error Reports
+        Remove-Item "$env:LOCALAPPDATA\Microsoft\Windows\WER\*" -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item "$env:ProgramData\Microsoft\Windows\WER\*" -Recurse -Force -ErrorAction SilentlyContinue
+        
+        # Delivery Optimization cache
+        Remove-Item "$env:SystemRoot\ServiceProfiles\NetworkService\AppData\Local\Microsoft\Windows\DeliveryOptimization\Cache\*" -Recurse -Force -ErrorAction SilentlyContinue
+        
+        # Downloaded Program Files
+        Remove-Item "$env:SystemRoot\Downloaded Program Files\*" -Recurse -Force -ErrorAction SilentlyContinue
+        
+        # Old Windows installations
+        Remove-Item "$env:SystemDrive\Windows.old" -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item "$env:SystemDrive\`$Windows.~BT" -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item "$env:SystemDrive\`$Windows.~WS" -Recurse -Force -ErrorAction SilentlyContinue
         
         Write-Host "Disk Cleanup finished." -ForegroundColor Green
     } catch {
-        Write-Host "Disk Cleanup failed, but the rest completed." -ForegroundColor Red
+        Write-Host "Disk Cleanup encountered errors, but completed." -ForegroundColor Yellow
     }
 
     Log-Line "Manual cleanup completed"
