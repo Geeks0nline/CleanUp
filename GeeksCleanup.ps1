@@ -22,7 +22,7 @@ $startupPs1       = Join-Path $scriptRoot "StartupClean.ps1"
 $startupBat       = Join-Path $scriptRoot "StartupClean.bat"
 $logPath          = Join-Path $scriptRoot "DailyClean.log"
 
-$Version      = "1.3.1"
+$Version      = "1.3.2"
 
 $taskNameOld  = "Geeks.Online Startup Cleanup"
 $taskNameLogon = "Geeks.Online Cleanup (Startup)"
@@ -94,7 +94,15 @@ function Run-ManualCleanup {
 
     Write-Host "[4/4] Running Windows Disk Cleanup silently..." -ForegroundColor White
     try {
-        Start-Process cleanmgr.exe -ArgumentList "/VERYLOWDISK","/d","C" -Wait -WindowStyle Hidden
+        # Configure Disk Cleanup to run silently via registry (StateFlags0100)
+        $volumeCachePath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches"
+        Get-ChildItem $volumeCachePath -ErrorAction SilentlyContinue | ForEach-Object {
+            Set-ItemProperty -Path $_.PSPath -Name "StateFlags0100" -Value 2 -Type DWord -ErrorAction SilentlyContinue
+        }
+        
+        # Run Disk Cleanup silently using the configured flags
+        Start-Process cleanmgr.exe -ArgumentList "/sagerun:100" -Wait -WindowStyle Hidden
+        
         Write-Host "Disk Cleanup finished." -ForegroundColor Green
     } catch {
         Write-Host "Disk Cleanup failed, but the rest completed." -ForegroundColor Red
