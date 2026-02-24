@@ -22,7 +22,7 @@ $startupPs1       = Join-Path $scriptRoot "StartupClean.ps1"
 $startupBat       = Join-Path $scriptRoot "StartupClean.bat"
 $logPath          = Join-Path $scriptRoot "DailyClean.log"
 
-$Version      = "1.3.3"
+$Version      = "1.3.4"
 
 $taskNameOld  = "Geeks.Online Startup Cleanup"
 $taskNameLogon = "Geeks.Online Cleanup (Startup)"
@@ -83,14 +83,14 @@ function Run-ManualCleanup {
     Write-Section "Cleanup in progress"
 
     Write-Host "[1/4] Cleaning temporary folders..." -ForegroundColor White
-    Remove-Item -Path "$env:TEMP\*" -Recurse -Force -ErrorAction SilentlyContinue
-    Remove-Item -Path "$env:SystemRoot\Temp\*" -Recurse -Force -ErrorAction SilentlyContinue
+    try { Remove-Item -Path "$env:TEMP\*" -Recurse -Force -ErrorAction SilentlyContinue } catch {}
+    try { Remove-Item -Path "$env:SystemRoot\Temp\*" -Recurse -Force -ErrorAction SilentlyContinue } catch {}
 
     Write-Host "[2/4] Emptying Recycle Bin..." -ForegroundColor White
     try { Clear-RecycleBin -Force -ErrorAction SilentlyContinue } catch {}
 
     Write-Host "[3/4] Cleaning prefetch cache..." -ForegroundColor White
-    Remove-Item -Path "$env:SystemRoot\Prefetch\*" -Recurse -Force -ErrorAction SilentlyContinue
+    try { Remove-Item -Path "$env:SystemRoot\Prefetch\*" -Recurse -Force -ErrorAction SilentlyContinue } catch {}
 
     Write-Host "[4/4] Running Disk Cleanup (silent)..." -ForegroundColor White
     try {
@@ -164,10 +164,10 @@ function Ensure-StartupScript {
     if (-not (Test-Path $startupPs1)) {
         # Dynamically generate the script with correct paths
         $content = @"
-Remove-Item -Path "`$env:TEMP\*" -Recurse -Force -ErrorAction SilentlyContinue
-Remove-Item -Path "`$env:SystemRoot\Temp\*" -Recurse -Force -ErrorAction SilentlyContinue
+try { Remove-Item -Path "`$env:TEMP\*" -Recurse -Force -ErrorAction SilentlyContinue } catch {}
+try { Remove-Item -Path "`$env:SystemRoot\Temp\*" -Recurse -Force -ErrorAction SilentlyContinue } catch {}
 try { Clear-RecycleBin -Force -ErrorAction SilentlyContinue } catch {}
-Remove-Item -Path "`$env:SystemRoot\Prefetch\*" -Recurse -Force -ErrorAction SilentlyContinue
+try { Remove-Item -Path "`$env:SystemRoot\Prefetch\*" -Recurse -Force -ErrorAction SilentlyContinue } catch {}
 
 "Startup cleanup ran at $(Get-Date)" | Add-Content "$scriptRoot\DailyClean.log"
 
