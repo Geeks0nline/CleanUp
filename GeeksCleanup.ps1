@@ -22,7 +22,7 @@ $startupPs1       = Join-Path $scriptRoot "StartupClean.ps1"
 $startupBat       = Join-Path $scriptRoot "StartupClean.bat"
 $logPath          = Join-Path $scriptRoot "DailyClean.log"
 
-$Version      = "2.0.0"
+$Version      = "2.1.0"
 
 $taskNameOld  = "Geeks.Online Startup Cleanup"
 $taskNameLogon = "Geeks.Online Cleanup (Startup)"
@@ -70,111 +70,213 @@ function Log-Line {
     "$Text  [$([DateTime]::Now)]" | Add-Content $logPath
 }
 
+# ====================== Cleanup Helpers ==========================
+
+# Empties a folder's contents without deleting the folder itself.
+function Clear-FolderContents {
+    param([string]$Path)
+    if ([string]::IsNullOrWhiteSpace($Path)) { return }
+    try {
+        if (Test-Path -LiteralPath $Path) {
+            Remove-Item -Path (Join-Path $Path '*') -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    } catch {}
+}
+
+# Free space (bytes) on the system drive, used to report how much we cleared.
+function Get-SystemDriveFreeBytes {
+    try {
+        $disk = Get-CimInstance -ClassName Win32_LogicalDisk -Filter "DeviceID='$env:SystemDrive'" -ErrorAction SilentlyContinue
+        if ($disk) { return [int64]$disk.FreeSpace }
+    } catch {}
+    return 0
+}
+
+# Clears temp + app/browser caches for a single user profile.
+# Pass that profile's Local and Roaming AppData paths so we can reuse this
+# for the current user AND every other account on the machine.
+function Clear-UserJunk {
+    param(
+        [string]$LocalAppData,
+        [string]$RoamingAppData
+    )
+
+    if ([string]::IsNullOrWhiteSpace($LocalAppData)) { return }
+
+    # Temp
+    Clear-FolderContents (Join-Path $LocalAppData "Temp")
+
+    # Windows web cache (Internet Explorer / legacy Edge)
+    Clear-FolderContents (Join-Path $LocalAppData "Microsoft\Windows\INetCache")
+
+    # Graphics / DirectX shader caches
+    Clear-FolderContents (Join-Path $LocalAppData "D3DSCache")
+    Clear-FolderContents (Join-Path $LocalAppData "NVIDIA\DXCache")
+    Clear-FolderContents (Join-Path $LocalAppData "NVIDIA\GLCache")
+
+    # Remote Desktop bitmap cache
+    Clear-FolderContents (Join-Path $LocalAppData "Microsoft\Terminal Server Client\Cache")
+
+    # Chromium-based browsers (Chrome, Edge, Brave) - clean every profile folder
+    $chromiumBases = @(
+        "Google\Chrome\User Data",
+        "Microsoft\Edge\User Data",
+        "BraveSoftware\Brave-Browser\User Data"
+    )
+    foreach ($base in $chromiumBases) {
+        $root = Join-Path $LocalAppData $base
+        if (Test-Path $root) {
+            Get-ChildItem $root -Directory -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -eq 'Default' -or $_.Name -like 'Profile*' } |
+                ForEach-Object {
+                    foreach ($sub in @("Cache", "Code Cache", "GPUCache", "Service Worker\CacheStorage", "Service Worker\ScriptCache")) {
+                        Clear-FolderContents (Join-Path $_.FullName $sub)
+                    }
+                }
+            Clear-FolderContents (Join-Path $root "ShaderCache")
+        }
+    }
+
+    # Firefox
+    $ffProfiles = Join-Path $LocalAppData "Mozilla\Firefox\Profiles"
+    if (Test-Path $ffProfiles) {
+        Get-ChildItem $ffProfiles -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+            Clear-FolderContents (Join-Path $_.FullName "cache2")
+        }
+    }
+
+    # Microsoft Teams (classic) caches
+    if (-not [string]::IsNullOrWhiteSpace($RoamingAppData)) {
+        $teams = Join-Path $RoamingAppData "Microsoft\Teams"
+        if (Test-Path $teams) {
+            foreach ($sub in @("Cache", "blob_storage", "GPUCache", "Service Worker\CacheStorage", "tmp")) {
+                Clear-FolderContents (Join-Path $teams $sub)
+            }
+        }
+    }
+}
+
+# Runs the built-in Windows Disk Cleanup with ALL categories enabled, silently.
+# Time-boxed: if it exceeds the budget it is stopped so we stay fast.
+# The user's Downloads folder is deliberately never touched (personal files).
+function Invoke-WindowsDiskCleanup {
+    param([int]$TimeoutSeconds = 120)
+
+    $cleanMgr = Join-Path $env:SystemRoot "System32\cleanmgr.exe"
+    if (-not (Test-Path $cleanMgr)) {
+        Write-Host "  cleanmgr.exe is not available on this system - skipped." -ForegroundColor Yellow
+        return
+    }
+
+    $tag      = 65
+    $flagName = "StateFlags{0:D4}" -f $tag
+    $vcRoot   = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches"
+
+    # Never enable handlers that delete the customer's personal files.
+    $skipHandlers = @("DownloadsFolder")
+
+    if (Test-Path $vcRoot) {
+        Get-ChildItem $vcRoot -ErrorAction SilentlyContinue | ForEach-Object {
+            $value = if ($skipHandlers -contains $_.PSChildName) { 0 } else { 2 }
+            New-ItemProperty -Path $_.PSPath -Name $flagName -Value $value -PropertyType DWord -Force -ErrorAction SilentlyContinue | Out-Null
+        }
+    }
+
+    try {
+        $proc = Start-Process -FilePath $cleanMgr -ArgumentList "/sagerun:$tag" -PassThru -WindowStyle Hidden -ErrorAction Stop
+    } catch {
+        Write-Host "  Could not start Disk Cleanup - skipped." -ForegroundColor Yellow
+        return
+    }
+
+    if (-not $proc.WaitForExit($TimeoutSeconds * 1000)) {
+        # Respect the time budget: stop cleanmgr and any child cleanup process.
+        Get-Process -Name cleanmgr, dismhost -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+        Write-Host "  Disk Cleanup hit the ${TimeoutSeconds}s limit and was stopped (partial clean applied)." -ForegroundColor Yellow
+    }
+}
+
 # ====================== Manual Cleanup ============================
 
 function Run-ManualCleanup {
     Clear-AndBanner
     Write-Section "Manual Cleanup"
 
-    Write-Host "This will remove temporary junk files and empty the Recycle Bin." -ForegroundColor Yellow
-    Write-Host "Your personal files will NOT be touched." -ForegroundColor Yellow
+    Write-Host "This will remove temporary junk files, app/browser caches, and empty the Recycle Bin." -ForegroundColor Yellow
+    Write-Host "Your personal files (Documents, Downloads, Pictures, etc.) will NOT be touched." -ForegroundColor Yellow
     Write-Host ""
 
     Write-Section "Cleanup in progress"
 
-    Write-Host "[1/7] Cleaning temporary folders..." -ForegroundColor White
-    try { Remove-Item -Path "$env:TEMP\*" -Recurse -Force -ErrorAction SilentlyContinue } catch {}
-    try { Remove-Item -Path "$env:SystemRoot\Temp\*" -Recurse -Force -ErrorAction SilentlyContinue } catch {}
+    $freeBefore = Get-SystemDriveFreeBytes
 
-    Write-Host "[2/7] Emptying Recycle Bin..." -ForegroundColor White
+    Write-Host "[1/8] Cleaning temp & caches for all user accounts..." -ForegroundColor White
+    # Current user
+    Clear-UserJunk -LocalAppData $env:LOCALAPPDATA -RoamingAppData $env:APPDATA
+    # Every other real profile on the machine
+    Get-ChildItem "$env:SystemDrive\Users" -Directory -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -notin @('Public', 'Default', 'Default User', 'All Users', 'defaultuser0') } |
+        ForEach-Object {
+            Clear-UserJunk -LocalAppData (Join-Path $_.FullName "AppData\Local") `
+                           -RoamingAppData (Join-Path $_.FullName "AppData\Roaming")
+        }
+    # System-wide temp
+    Clear-FolderContents "$env:SystemRoot\Temp"
+    Write-Host "  Temp folders, browser and app caches cleared." -ForegroundColor Gray
+
+    Write-Host "[2/8] Emptying Recycle Bin (all drives)..." -ForegroundColor White
     try { Clear-RecycleBin -Force -ErrorAction SilentlyContinue } catch {}
 
-    Write-Host "[3/7] Cleaning prefetch cache..." -ForegroundColor White
-    try { Remove-Item -Path "$env:SystemRoot\Prefetch\*" -Recurse -Force -ErrorAction SilentlyContinue } catch {}
+    Write-Host "[3/8] Cleaning prefetch cache..." -ForegroundColor White
+    Clear-FolderContents "$env:SystemRoot\Prefetch"
 
-    Write-Host "[4/7] Cleaning browser caches..." -ForegroundColor White
-    # Chrome
-    $chromeCachePaths = @(
-        "$env:LOCALAPPDATA\Google\Chrome\User Data\Default\Cache",
-        "$env:LOCALAPPDATA\Google\Chrome\User Data\Default\Code Cache",
-        "$env:LOCALAPPDATA\Google\Chrome\User Data\Default\GPUCache",
-        "$env:LOCALAPPDATA\Google\Chrome\User Data\Default\Service Worker\CacheStorage",
-        "$env:LOCALAPPDATA\Google\Chrome\User Data\Default\Service Worker\ScriptCache",
-        "$env:LOCALAPPDATA\Google\Chrome\User Data\ShaderCache"
-    )
-    foreach ($p in $chromeCachePaths) {
-        if (Test-Path $p) { Remove-Item "$p\*" -Recurse -Force -ErrorAction SilentlyContinue }
-    }
-    # Edge
-    $edgeCachePaths = @(
-        "$env:LOCALAPPDATA\Microsoft\Edge\User Data\Default\Cache",
-        "$env:LOCALAPPDATA\Microsoft\Edge\User Data\Default\Code Cache",
-        "$env:LOCALAPPDATA\Microsoft\Edge\User Data\Default\GPUCache",
-        "$env:LOCALAPPDATA\Microsoft\Edge\User Data\Default\Service Worker\CacheStorage",
-        "$env:LOCALAPPDATA\Microsoft\Edge\User Data\Default\Service Worker\ScriptCache",
-        "$env:LOCALAPPDATA\Microsoft\Edge\User Data\ShaderCache"
-    )
-    foreach ($p in $edgeCachePaths) {
-        if (Test-Path $p) { Remove-Item "$p\*" -Recurse -Force -ErrorAction SilentlyContinue }
-    }
-    # Firefox
-    $ffProfiles = "$env:LOCALAPPDATA\Mozilla\Firefox\Profiles"
-    if (Test-Path $ffProfiles) {
-        Get-ChildItem $ffProfiles -Directory -ErrorAction SilentlyContinue | ForEach-Object {
-            $cachePath = Join-Path $_.FullName "cache2"
-            if (Test-Path $cachePath) { Remove-Item "$cachePath\*" -Recurse -Force -ErrorAction SilentlyContinue }
-        }
-    }
-    Write-Host "  Browser caches cleaned (Chrome, Edge, Firefox)." -ForegroundColor Gray
-
-    Write-Host "[5/7] Flushing DNS cache..." -ForegroundColor White
+    Write-Host "[4/8] Flushing DNS cache..." -ForegroundColor White
     ipconfig /flushdns | Out-Null
     Write-Host "  DNS cache flushed." -ForegroundColor Gray
 
-    Write-Host "[6/7] Removing memory dump files..." -ForegroundColor White
+    Write-Host "[5/8] Removing crash dumps & error reports..." -ForegroundColor White
     Remove-Item "$env:SystemRoot\MEMORY.DMP" -Force -ErrorAction SilentlyContinue
-    Remove-Item "$env:SystemRoot\Minidump\*" -Force -ErrorAction SilentlyContinue
-    Remove-Item "$env:LOCALAPPDATA\CrashDumps\*" -Force -ErrorAction SilentlyContinue
-    Write-Host "  Memory dumps cleaned." -ForegroundColor Gray
+    Clear-FolderContents "$env:SystemRoot\Minidump"
+    Clear-FolderContents "$env:LOCALAPPDATA\CrashDumps"
+    Clear-FolderContents "$env:LOCALAPPDATA\Microsoft\Windows\WER"
+    Clear-FolderContents "$env:ProgramData\Microsoft\Windows\WER"
+    Write-Host "  Crash and error report files cleaned." -ForegroundColor Gray
 
-    Write-Host "[7/7] Running Disk Cleanup (silent)..." -ForegroundColor White
-    try {
-        # Windows Update cache
-        Stop-Service -Name wuauserv -Force -ErrorAction SilentlyContinue
-        Remove-Item "$env:SystemRoot\SoftwareDistribution\Download\*" -Recurse -Force -ErrorAction SilentlyContinue
-        Start-Service -Name wuauserv -ErrorAction SilentlyContinue
-        
-        # Windows logs
-        Remove-Item "$env:SystemRoot\Logs\CBS\*" -Recurse -Force -ErrorAction SilentlyContinue
-        Remove-Item "$env:SystemRoot\Logs\DISM\*" -Recurse -Force -ErrorAction SilentlyContinue
-        
-        # Thumbnail cache
-        Remove-Item "$env:LOCALAPPDATA\Microsoft\Windows\Explorer\thumbcache_*.db" -Force -ErrorAction SilentlyContinue
-        
-        # Windows Error Reports
-        Remove-Item "$env:LOCALAPPDATA\Microsoft\Windows\WER\*" -Recurse -Force -ErrorAction SilentlyContinue
-        Remove-Item "$env:ProgramData\Microsoft\Windows\WER\*" -Recurse -Force -ErrorAction SilentlyContinue
-        
-        # Delivery Optimization cache
-        Remove-Item "$env:SystemRoot\ServiceProfiles\NetworkService\AppData\Local\Microsoft\Windows\DeliveryOptimization\Cache\*" -Recurse -Force -ErrorAction SilentlyContinue
-        
-        # Downloaded Program Files
-        Remove-Item "$env:SystemRoot\Downloaded Program Files\*" -Recurse -Force -ErrorAction SilentlyContinue
-        
-        # Old Windows installations
-        Remove-Item "$env:SystemDrive\Windows.old" -Recurse -Force -ErrorAction SilentlyContinue
-        Remove-Item "$env:SystemDrive\`$Windows.~BT" -Recurse -Force -ErrorAction SilentlyContinue
-        Remove-Item "$env:SystemDrive\`$Windows.~WS" -Recurse -Force -ErrorAction SilentlyContinue
-        
-        Write-Host "Disk Cleanup finished." -ForegroundColor Green
-    } catch {
-        Write-Host "Disk Cleanup encountered errors, but completed." -ForegroundColor Yellow
-    }
+    Write-Host "[6/8] Cleaning Windows logs, thumbnails & leftovers..." -ForegroundColor White
+    Clear-FolderContents "$env:SystemRoot\Logs\CBS"
+    Clear-FolderContents "$env:SystemRoot\Logs\DISM"
+    Clear-FolderContents "$env:SystemRoot\Logs\MoSetup"
+    Clear-FolderContents "$env:SystemRoot\Logs\WindowsUpdate"
+    Clear-FolderContents "$env:SystemRoot\Panther"
+    Remove-Item "$env:LOCALAPPDATA\Microsoft\Windows\Explorer\thumbcache_*.db" -Force -ErrorAction SilentlyContinue
+    Remove-Item "$env:LOCALAPPDATA\Microsoft\Windows\Explorer\iconcache_*.db" -Force -ErrorAction SilentlyContinue
+    Clear-FolderContents "$env:SystemRoot\ServiceProfiles\NetworkService\AppData\Local\Microsoft\Windows\DeliveryOptimization\Cache"
+    Clear-FolderContents "$env:SystemRoot\Downloaded Program Files"
+    Write-Host "  Windows logs, thumbnails and leftovers cleaned." -ForegroundColor Gray
 
-    Log-Line "Manual cleanup completed"
+    Write-Host "[7/8] Clearing Windows Update cache & old installations..." -ForegroundColor White
+    Stop-Service -Name wuauserv -Force -ErrorAction SilentlyContinue
+    Clear-FolderContents "$env:SystemRoot\SoftwareDistribution\Download"
+    Start-Service -Name wuauserv -ErrorAction SilentlyContinue
+    Remove-Item "$env:SystemDrive\Windows.old" -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item "$env:SystemDrive\`$Windows.~BT" -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item "$env:SystemDrive\`$Windows.~WS" -Recurse -Force -ErrorAction SilentlyContinue
+    Write-Host "  Update cache and old installation files cleared." -ForegroundColor Gray
+
+    Write-Host "[8/8] Running Windows Disk Cleanup (all categories)..." -ForegroundColor White
+    Invoke-WindowsDiskCleanup -TimeoutSeconds 120
+    Write-Host "  Disk Cleanup finished." -ForegroundColor Gray
+
+    $freeAfter = Get-SystemDriveFreeBytes
+    $freedMB   = [math]::Round( [math]::Max(0, ($freeAfter - $freeBefore)) / 1MB, 1)
+
+    Log-Line "Manual cleanup completed - freed approx $freedMB MB"
 
     Write-Section "Complete"
     Write-Host "Cleanup finished successfully!" -ForegroundColor Green
+    if ($freedMB -gt 0) {
+        Write-Host ("Approximately {0} MB of space was freed on {1}" -f $freedMB, $env:SystemDrive) -ForegroundColor Green
+    }
     Write-Host ""
     Read-Host "Press Enter to return to the menu" | Out-Null
 }

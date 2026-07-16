@@ -6,11 +6,21 @@ This is a simple, automated maintenance tool designed to keep your computer runn
 ## Features
 
 ### 1. Manual Cleanup (Run Now)
-Instantly cleans up:
-- **Temporary Files** (`%TEMP%`, `C:\Windows\Temp`)
-- **Recycle Bin** (Empties it)
+A fast (typically 1-3 minute) cleanup that clears:
+- **Temporary Files** for **every user account** (`%TEMP%`, `C:\Windows\Temp`)
+- **Browser Caches** (Chrome, Edge, Brave, Firefox) for every account
+- **App Caches** (Microsoft Teams, Remote Desktop, DirectX/NVIDIA shader caches, IE/legacy web cache)
+- **Recycle Bin** (Empties it on all drives)
 - **Prefetch Cache** (Helps system speed)
-- **Windows Disk Cleanup** (Runs the built-in Windows tool silently)
+- **DNS Cache** (Flushes it)
+- **Crash Dumps & Error Reports** (`MEMORY.DMP`, minidumps, WER)
+- **Windows Logs, Thumbnails & Leftovers** (CBS/DISM/setup logs, Delivery Optimization, thumbnail/icon cache)
+- **Windows Update Cache & Old Installations** (`SoftwareDistribution`, `Windows.old`)
+- **Windows Disk Cleanup** — actually runs the built-in `cleanmgr` tool with **all cleanup categories** enabled, silently and time-boxed so it never runs long
+
+> Personal files (Documents, Downloads, Pictures, etc.) are never touched — the Downloads-folder cleanup handler is explicitly disabled.
+
+At the end it reports approximately how much disk space was freed.
 
 ### 2. Startup Cleanup
 - Enables a background task that runs **every time you log in**.
