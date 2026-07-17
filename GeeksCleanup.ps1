@@ -22,7 +22,7 @@ $startupPs1       = Join-Path $scriptRoot "StartupClean.ps1"
 $startupBat       = Join-Path $scriptRoot "StartupClean.bat"
 $logPath          = Join-Path $scriptRoot "DailyClean.log"
 
-$Version      = "2.1.0"
+$Version      = "2.2.0"
 
 $taskNameOld  = "Geeks.Online Startup Cleanup"
 $taskNameLogon = "Geeks.Online Cleanup (Startup)"
@@ -92,7 +92,9 @@ function Get-SystemDriveFreeBytes {
     return 0
 }
 
-# Clears temp + app/browser caches for a single user profile.
+# Clears temp + app caches for a single user profile.
+# Browser caches (Chrome, Edge, Brave, Firefox) are deliberately left alone:
+# wiping them makes browsing feel slow afterwards while sites re-download.
 # Pass that profile's Local and Roaming AppData paths so we can reuse this
 # for the current user AND every other account on the machine.
 function Clear-UserJunk {
@@ -106,9 +108,6 @@ function Clear-UserJunk {
     # Temp
     Clear-FolderContents (Join-Path $LocalAppData "Temp")
 
-    # Windows web cache (Internet Explorer / legacy Edge)
-    Clear-FolderContents (Join-Path $LocalAppData "Microsoft\Windows\INetCache")
-
     # Graphics / DirectX shader caches
     Clear-FolderContents (Join-Path $LocalAppData "D3DSCache")
     Clear-FolderContents (Join-Path $LocalAppData "NVIDIA\DXCache")
@@ -116,34 +115,6 @@ function Clear-UserJunk {
 
     # Remote Desktop bitmap cache
     Clear-FolderContents (Join-Path $LocalAppData "Microsoft\Terminal Server Client\Cache")
-
-    # Chromium-based browsers (Chrome, Edge, Brave) - clean every profile folder
-    $chromiumBases = @(
-        "Google\Chrome\User Data",
-        "Microsoft\Edge\User Data",
-        "BraveSoftware\Brave-Browser\User Data"
-    )
-    foreach ($base in $chromiumBases) {
-        $root = Join-Path $LocalAppData $base
-        if (Test-Path $root) {
-            Get-ChildItem $root -Directory -ErrorAction SilentlyContinue |
-                Where-Object { $_.Name -eq 'Default' -or $_.Name -like 'Profile*' } |
-                ForEach-Object {
-                    foreach ($sub in @("Cache", "Code Cache", "GPUCache", "Service Worker\CacheStorage", "Service Worker\ScriptCache")) {
-                        Clear-FolderContents (Join-Path $_.FullName $sub)
-                    }
-                }
-            Clear-FolderContents (Join-Path $root "ShaderCache")
-        }
-    }
-
-    # Firefox
-    $ffProfiles = Join-Path $LocalAppData "Mozilla\Firefox\Profiles"
-    if (Test-Path $ffProfiles) {
-        Get-ChildItem $ffProfiles -Directory -ErrorAction SilentlyContinue | ForEach-Object {
-            Clear-FolderContents (Join-Path $_.FullName "cache2")
-        }
-    }
 
     # Microsoft Teams (classic) caches
     if (-not [string]::IsNullOrWhiteSpace($RoamingAppData)) {
@@ -172,8 +143,9 @@ function Invoke-WindowsDiskCleanup {
     $flagName = "StateFlags{0:D4}" -f $tag
     $vcRoot   = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches"
 
-    # Never enable handlers that delete the customer's personal files.
-    $skipHandlers = @("DownloadsFolder")
+    # Never enable handlers that delete the customer's personal files,
+    # or the browser web cache (keeps browsing fast after a cleanup).
+    $skipHandlers = @("DownloadsFolder", "Internet Cache Files")
 
     if (Test-Path $vcRoot) {
         Get-ChildItem $vcRoot -ErrorAction SilentlyContinue | ForEach-Object {
@@ -202,8 +174,9 @@ function Run-ManualCleanup {
     Clear-AndBanner
     Write-Section "Manual Cleanup"
 
-    Write-Host "This will remove temporary junk files, app/browser caches, and empty the Recycle Bin." -ForegroundColor Yellow
+    Write-Host "This will remove temporary junk files, app caches, and empty the Recycle Bin." -ForegroundColor Yellow
     Write-Host "Your personal files (Documents, Downloads, Pictures, etc.) will NOT be touched." -ForegroundColor Yellow
+    Write-Host "Browser caches are left alone so your websites keep loading fast." -ForegroundColor Yellow
     Write-Host ""
 
     Write-Section "Cleanup in progress"
@@ -222,7 +195,7 @@ function Run-ManualCleanup {
         }
     # System-wide temp
     Clear-FolderContents "$env:SystemRoot\Temp"
-    Write-Host "  Temp folders, browser and app caches cleared." -ForegroundColor Gray
+    Write-Host "  Temp folders and app caches cleared." -ForegroundColor Gray
 
     Write-Host "[2/8] Emptying Recycle Bin (all drives)..." -ForegroundColor White
     try { Clear-RecycleBin -Force -ErrorAction SilentlyContinue } catch {}

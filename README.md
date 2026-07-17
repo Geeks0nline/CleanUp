@@ -8,8 +8,7 @@ This is a simple, automated maintenance tool designed to keep your computer runn
 ### 1. Manual Cleanup (Run Now)
 A fast (typically 1-3 minute) cleanup that clears:
 - **Temporary Files** for **every user account** (`%TEMP%`, `C:\Windows\Temp`)
-- **Browser Caches** (Chrome, Edge, Brave, Firefox) for every account
-- **App Caches** (Microsoft Teams, Remote Desktop, DirectX/NVIDIA shader caches, IE/legacy web cache)
+- **App Caches** (Microsoft Teams, Remote Desktop, DirectX/NVIDIA shader caches)
 - **Recycle Bin** (Empties it on all drives)
 - **Prefetch Cache** (Helps system speed)
 - **DNS Cache** (Flushes it)
@@ -19,6 +18,8 @@ A fast (typically 1-3 minute) cleanup that clears:
 - **Windows Disk Cleanup** — actually runs the built-in `cleanmgr` tool with **all cleanup categories** enabled, silently and time-boxed so it never runs long
 
 > Personal files (Documents, Downloads, Pictures, etc.) are never touched — the Downloads-folder cleanup handler is explicitly disabled.
+
+> Browser caches (Chrome, Edge, Brave, Firefox) are deliberately **not** cleared, so websites keep loading fast after a cleanup.
 
 At the end it reports approximately how much disk space was freed.
 
