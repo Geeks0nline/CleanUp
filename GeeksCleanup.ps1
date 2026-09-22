@@ -183,7 +183,7 @@ function Run-ManualCleanup {
 
     $freeBefore = Get-SystemDriveFreeBytes
 
-    Write-Host "[1/8] Cleaning temp & caches for all user accounts..." -ForegroundColor White
+    Write-Host "[1/5] Cleaning temp & caches for all user accounts..." -ForegroundColor White
     # Current user
     Clear-UserJunk -LocalAppData $env:LOCALAPPDATA -RoamingAppData $env:APPDATA
     # Every other real profile on the machine
@@ -197,25 +197,25 @@ function Run-ManualCleanup {
     Clear-FolderContents "$env:SystemRoot\Temp"
     Write-Host "  Temp folders and app caches cleared." -ForegroundColor Gray
 
-    Write-Host "[2/8] Emptying Recycle Bin (all drives)..." -ForegroundColor White
+    Write-Host "[2/5] Emptying Recycle Bin (all drives)..." -ForegroundColor White
     try { Clear-RecycleBin -Force -ErrorAction SilentlyContinue } catch {}
 
-    Write-Host "[3/8] Cleaning prefetch cache..." -ForegroundColor White
+    Write-Host "[3/5] Cleaning prefetch cache..." -ForegroundColor White
     Clear-FolderContents "$env:SystemRoot\Prefetch"
 
-    Write-Host "[4/8] Flushing DNS cache..." -ForegroundColor White
-    ipconfig /flushdns | Out-Null
-    Write-Host "  DNS cache flushed." -ForegroundColor Gray
+    # --- Silent housekeeping (no console output, same work as before) ---
 
-    Write-Host "[5/8] Removing crash dumps & error reports..." -ForegroundColor White
+    # Flush DNS cache
+    ipconfig /flushdns | Out-Null
+
+    # Remove crash dumps & error reports
     Remove-Item "$env:SystemRoot\MEMORY.DMP" -Force -ErrorAction SilentlyContinue
     Clear-FolderContents "$env:SystemRoot\Minidump"
     Clear-FolderContents "$env:LOCALAPPDATA\CrashDumps"
     Clear-FolderContents "$env:LOCALAPPDATA\Microsoft\Windows\WER"
     Clear-FolderContents "$env:ProgramData\Microsoft\Windows\WER"
-    Write-Host "  Crash and error report files cleaned." -ForegroundColor Gray
 
-    Write-Host "[6/8] Cleaning Windows logs, thumbnails & leftovers..." -ForegroundColor White
+    # Clean Windows logs, thumbnails & leftovers
     Clear-FolderContents "$env:SystemRoot\Logs\CBS"
     Clear-FolderContents "$env:SystemRoot\Logs\DISM"
     Clear-FolderContents "$env:SystemRoot\Logs\MoSetup"
@@ -225,9 +225,10 @@ function Run-ManualCleanup {
     Remove-Item "$env:LOCALAPPDATA\Microsoft\Windows\Explorer\iconcache_*.db" -Force -ErrorAction SilentlyContinue
     Clear-FolderContents "$env:SystemRoot\ServiceProfiles\NetworkService\AppData\Local\Microsoft\Windows\DeliveryOptimization\Cache"
     Clear-FolderContents "$env:SystemRoot\Downloaded Program Files"
-    Write-Host "  Windows logs, thumbnails and leftovers cleaned." -ForegroundColor Gray
 
-    Write-Host "[7/8] Clearing Windows Update cache & old installations..." -ForegroundColor White
+    # --- End silent housekeeping ---
+
+    Write-Host "[4/5] Clearing Windows Update cache & old installations..." -ForegroundColor White
     Stop-Service -Name wuauserv -Force -ErrorAction SilentlyContinue
     Clear-FolderContents "$env:SystemRoot\SoftwareDistribution\Download"
     Start-Service -Name wuauserv -ErrorAction SilentlyContinue
@@ -236,7 +237,7 @@ function Run-ManualCleanup {
     Remove-Item "$env:SystemDrive\`$Windows.~WS" -Recurse -Force -ErrorAction SilentlyContinue
     Write-Host "  Update cache and old installation files cleared." -ForegroundColor Gray
 
-    Write-Host "[8/8] Running Windows Disk Cleanup (all categories)..." -ForegroundColor White
+    Write-Host "[5/5] Running Windows Disk Cleanup (all categories)..." -ForegroundColor White
     Invoke-WindowsDiskCleanup -TimeoutSeconds 120
     Write-Host "  Disk Cleanup finished." -ForegroundColor Gray
 
