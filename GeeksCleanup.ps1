@@ -72,37 +72,12 @@ function Log-Line {
 
 # ====================== Cleanup Helpers ==========================
 
-# One empty folder, reused all run as the "source" robocopy mirrors from.
-# Kept out of any temp folder so our own cleanup does not delete it mid-run.
-$script:EmptyMirrorDir = $null
-
-function Get-EmptyMirrorDir {
-    if ($script:EmptyMirrorDir -and (Test-Path -LiteralPath $script:EmptyMirrorDir)) {
-        return $script:EmptyMirrorDir
-    }
-    $dir = Join-Path $env:ProgramData "Geeks.Online\_empty"
-    try {
-        New-Item -Path $dir -ItemType Directory -Force -ErrorAction Stop | Out-Null
-        # Make sure it really is empty, or /MIR would copy files back in.
-        Get-ChildItem -LiteralPath $dir -Force -ErrorAction SilentlyContinue |
-            Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-        $script:EmptyMirrorDir = $dir
-        return $dir
-    } catch { return $null }
-}
-
-function Remove-EmptyMirrorDir {
-    if ($script:EmptyMirrorDir -and (Test-Path -LiteralPath $script:EmptyMirrorDir)) {
-        Remove-Item -LiteralPath $script:EmptyMirrorDir -Recurse -Force -ErrorAction SilentlyContinue
-    }
-    $script:EmptyMirrorDir = $null
-}
-
 # Empties a folder's contents without deleting the folder itself.
-# Mirroring an empty folder with robocopy is multi-threaded, so folders holding
-# thousands of small files (Temp, shader caches) clear far faster than with
-# Remove-Item -Recurse. /R:0 /W:0 is what keeps it quick: without it robocopy
-# retries a locked file a million times, 30 seconds apart, and appears to hang.
+# Goes straight to the .NET file APIs instead of Remove-Item: it skips the
+# PowerShell provider/pipeline overhead, which is most of the cost on folders
+# holding tens of thousands of small files (Temp, shader caches).
+# Each entry is deleted inside its own try/catch so one file another process
+# has open cannot abort the rest of the folder.
 function Clear-FolderContents {
     param([string]$Path)
     if ([string]::IsNullOrWhiteSpace($Path)) { return }
@@ -110,19 +85,15 @@ function Clear-FolderContents {
     try { $full = [IO.Path]::GetFullPath($Path) } catch { return }
     # Guard: never let a malformed path turn a "clear folder" into "wipe a drive".
     if ($full.TrimEnd('\').Length -le 2) { return }
-    if (-not (Test-Path -LiteralPath $full)) { return }
+    if (-not [IO.Directory]::Exists($full)) { return }
 
-    $empty = Get-EmptyMirrorDir
-    if ($empty) {
-        try {
-            robocopy $empty $full /MIR /MT:16 /R:0 /W:0 /NFL /NDL /NJH /NJS /NC /NS /NP | Out-Null
-            return
-        } catch {}
-    }
-
-    # Fallback for the rare machine without robocopy.
     try {
-        Remove-Item -Path (Join-Path $full '*') -Recurse -Force -ErrorAction SilentlyContinue
+        foreach ($dir in [IO.Directory]::EnumerateDirectories($full)) {
+            try { [IO.Directory]::Delete($dir, $true) } catch {}
+        }
+        foreach ($file in [IO.Directory]::EnumerateFiles($full)) {
+            try { [IO.File]::Delete($file) } catch {}
+        }
     } catch {}
 }
 
@@ -132,7 +103,7 @@ function Get-SystemDriveFreeBytes {
         $disk = Get-CimInstance -ClassName Win32_LogicalDisk -Filter "DeviceID='$env:SystemDrive'" -ErrorAction SilentlyContinue
         if ($disk) { return [int64]$disk.FreeSpace }
     } catch {}
-    return 0
+    return [int64]0
 }
 
 # Clears temp + app caches for a single user profile.
@@ -298,21 +269,29 @@ function Run-ManualCleanup {
     Remove-Item "$env:SystemDrive\`$Windows.~WS" -Recurse -Force -ErrorAction SilentlyContinue
     Write-Host "  Update cache and old installation files cleared." -ForegroundColor Gray
 
-    Write-Host "[5/5] Running Windows Disk Cleanup (all categories)..." -ForegroundColor White
+    Write-Host "[5/5] Running Windows Disk Cleanup..." -ForegroundColor White
     Invoke-WindowsDiskCleanup -TimeoutSeconds 60
     Write-Host "  Disk Cleanup finished." -ForegroundColor Gray
 
-    Remove-EmptyMirrorDir
-
     $freeAfter = Get-SystemDriveFreeBytes
-    $freedMB   = [math]::Round( [math]::Max(0, ($freeAfter - $freeBefore)) / 1MB, 1)
+    # [int64]0, not 0: a bare 0 selects Max(int,int) and a multi-GB byte
+    # count overflows Int32.
+    $freedBytes = [int64]$freeAfter - [int64]$freeBefore
+    if ($freedBytes -lt 0) { $freedBytes = [int64]0 }
+    $freedMB   = [math]::Round( $freedBytes / 1MB, 1)
+    # Past a gigabyte "25843.4 MB" stops being readable.
+    $freedText = if ($freedMB -ge 1024) {
+        "{0} GB" -f [math]::Round($freedBytes / 1GB, 2)
+    } else {
+        "{0} MB" -f $freedMB
+    }
 
-    Log-Line "Manual cleanup completed - freed approx $freedMB MB"
+    Log-Line "Manual cleanup completed - freed approx $freedText"
 
     Write-Section "Complete"
     Write-Host "Cleanup finished successfully!" -ForegroundColor Green
-    if ($freedMB -gt 0) {
-        Write-Host ("Approximately {0} MB of space was freed on {1}" -f $freedMB, $env:SystemDrive) -ForegroundColor Green
+    if ($freedBytes -gt 0) {
+        Write-Host ("Approximately {0} of space was freed on {1}" -f $freedText, $env:SystemDrive) -ForegroundColor Green
     }
     Write-Host ""
     Read-Host "Press Enter to return to the menu" | Out-Null
