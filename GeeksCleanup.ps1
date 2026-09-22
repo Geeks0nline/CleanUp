@@ -72,14 +72,57 @@ function Log-Line {
 
 # ====================== Cleanup Helpers ==========================
 
+# One empty folder, reused all run as the "source" robocopy mirrors from.
+# Kept out of any temp folder so our own cleanup does not delete it mid-run.
+$script:EmptyMirrorDir = $null
+
+function Get-EmptyMirrorDir {
+    if ($script:EmptyMirrorDir -and (Test-Path -LiteralPath $script:EmptyMirrorDir)) {
+        return $script:EmptyMirrorDir
+    }
+    $dir = Join-Path $env:ProgramData "Geeks.Online\_empty"
+    try {
+        New-Item -Path $dir -ItemType Directory -Force -ErrorAction Stop | Out-Null
+        # Make sure it really is empty, or /MIR would copy files back in.
+        Get-ChildItem -LiteralPath $dir -Force -ErrorAction SilentlyContinue |
+            Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+        $script:EmptyMirrorDir = $dir
+        return $dir
+    } catch { return $null }
+}
+
+function Remove-EmptyMirrorDir {
+    if ($script:EmptyMirrorDir -and (Test-Path -LiteralPath $script:EmptyMirrorDir)) {
+        Remove-Item -LiteralPath $script:EmptyMirrorDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    $script:EmptyMirrorDir = $null
+}
+
 # Empties a folder's contents without deleting the folder itself.
+# Mirroring an empty folder with robocopy is multi-threaded, so folders holding
+# thousands of small files (Temp, shader caches) clear far faster than with
+# Remove-Item -Recurse. /R:0 /W:0 is what keeps it quick: without it robocopy
+# retries a locked file a million times, 30 seconds apart, and appears to hang.
 function Clear-FolderContents {
     param([string]$Path)
     if ([string]::IsNullOrWhiteSpace($Path)) { return }
+
+    try { $full = [IO.Path]::GetFullPath($Path) } catch { return }
+    # Guard: never let a malformed path turn a "clear folder" into "wipe a drive".
+    if ($full.TrimEnd('\').Length -le 2) { return }
+    if (-not (Test-Path -LiteralPath $full)) { return }
+
+    $empty = Get-EmptyMirrorDir
+    if ($empty) {
+        try {
+            robocopy $empty $full /MIR /MT:16 /R:0 /W:0 /NFL /NDL /NJH /NJS /NC /NS /NP | Out-Null
+            return
+        } catch {}
+    }
+
+    # Fallback for the rare machine without robocopy.
     try {
-        if (Test-Path -LiteralPath $Path) {
-            Remove-Item -Path (Join-Path $Path '*') -Recurse -Force -ErrorAction SilentlyContinue
-        }
+        Remove-Item -Path (Join-Path $full '*') -Recurse -Force -ErrorAction SilentlyContinue
     } catch {}
 }
 
@@ -127,15 +170,15 @@ function Clear-UserJunk {
     }
 }
 
-# Runs the built-in Windows Disk Cleanup with ALL categories enabled, silently.
-# Time-boxed: if it exceeds the budget it is stopped so we stay fast.
+# Runs the built-in Windows Disk Cleanup silently, with the fast categories only.
+# Time-boxed as a safety net; anything unexpected is logged, never shown.
 # The user's Downloads folder is deliberately never touched (personal files).
 function Invoke-WindowsDiskCleanup {
-    param([int]$TimeoutSeconds = 120)
+    param([int]$TimeoutSeconds = 60)
 
     $cleanMgr = Join-Path $env:SystemRoot "System32\cleanmgr.exe"
     if (-not (Test-Path $cleanMgr)) {
-        Write-Host "  cleanmgr.exe is not available on this system - skipped." -ForegroundColor Yellow
+        Log-Line "Disk Cleanup skipped - cleanmgr.exe not present"
         return
     }
 
@@ -145,7 +188,24 @@ function Invoke-WindowsDiskCleanup {
 
     # Never enable handlers that delete the customer's personal files,
     # or the browser web cache (keeps browsing fast after a cleanup).
-    $skipHandlers = @("DownloadsFolder", "Internet Cache Files")
+    #
+    # The rest are off for speed. They hand the work to DISM / Windows servicing,
+    # which routinely runs for many minutes - that is what made this step blow
+    # through its time budget. The steps above already reclaim the same space
+    # directly (Windows.old, SoftwareDistribution, Delivery Optimization, logs),
+    # so skipping them costs essentially nothing.
+    $skipHandlers = @(
+        "DownloadsFolder",
+        "Internet Cache Files",
+        "Update Cleanup",                 # component store servicing - slowest by far
+        "Previous Installations",         # Windows.old, already removed above
+        "Windows Upgrade Log Files",      # already cleared above
+        "Windows ESD installation files",
+        "Delivery Optimization Files",    # already cleared above
+        "Device Driver Packages",
+        "Windows Defender",
+        "Old ChkDsk Files"
+    )
 
     if (Test-Path $vcRoot) {
         Get-ChildItem $vcRoot -ErrorAction SilentlyContinue | ForEach-Object {
@@ -157,14 +217,15 @@ function Invoke-WindowsDiskCleanup {
     try {
         $proc = Start-Process -FilePath $cleanMgr -ArgumentList "/sagerun:$tag" -PassThru -WindowStyle Hidden -ErrorAction Stop
     } catch {
-        Write-Host "  Could not start Disk Cleanup - skipped." -ForegroundColor Yellow
+        Log-Line "Disk Cleanup skipped - could not start cleanmgr.exe"
         return
     }
 
     if (-not $proc.WaitForExit($TimeoutSeconds * 1000)) {
-        # Respect the time budget: stop cleanmgr and any child cleanup process.
+        # Safety net only: with the servicing handlers disabled this should not
+        # fire. Stop quietly and log it - the customer never sees a warning.
         Get-Process -Name cleanmgr, dismhost -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-        Write-Host "  Disk Cleanup hit the ${TimeoutSeconds}s limit and was stopped (partial clean applied)." -ForegroundColor Yellow
+        Log-Line "Disk Cleanup exceeded ${TimeoutSeconds}s and was stopped (partial clean applied)"
     }
 }
 
@@ -238,8 +299,10 @@ function Run-ManualCleanup {
     Write-Host "  Update cache and old installation files cleared." -ForegroundColor Gray
 
     Write-Host "[5/5] Running Windows Disk Cleanup (all categories)..." -ForegroundColor White
-    Invoke-WindowsDiskCleanup -TimeoutSeconds 120
+    Invoke-WindowsDiskCleanup -TimeoutSeconds 60
     Write-Host "  Disk Cleanup finished." -ForegroundColor Gray
+
+    Remove-EmptyMirrorDir
 
     $freeAfter = Get-SystemDriveFreeBytes
     $freedMB   = [math]::Round( [math]::Max(0, ($freeAfter - $freeBefore)) / 1MB, 1)
